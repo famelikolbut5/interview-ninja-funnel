@@ -1,0 +1,151 @@
+name: interview-ninja-funnel
+
+x-app: &app
+  image: interview-ninja-funnel:local
+  build:
+    context: .
+    target: runtime
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+  volumes:
+    - ./logs:/app/logs
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: 5m
+      max-file: "3"
+
+x-database-environment: &database-environment
+  DB_HOST: db
+  DB_NAME: funnel
+  DB_USER: funnel
+  DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+services:
+  db:
+    image: postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: funnel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/10-app.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d funnel"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+    shm_size: 128mb
+    stop_grace_period: 30s
+    logging: *logging
+
+  migrate:
+    <<: *app
+    command: [launch_funnel.migrate]
+    environment: *database-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  bot:
+    <<: *app
+    command: [launch_funnel.bot]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      <<: *database-environment
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in .env}
+      ADMIN_USER_ID: ${ADMIN_USER_ID:?Set ADMIN_USER_ID in .env}
+      MINI_APP_URL: ${MINI_APP_URL:-}
+    volumes:
+      - ./logs:/app/logs
+      - ./data/media:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    <<: *app
+    command: [launch_funnel.web]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      <<: *database-environment
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in .env}
+      ADMIN_USER_ID: ${ADMIN_USER_ID:?Set ADMIN_USER_ID in .env}
+      WEB_HOST: 0.0.0.0
+    ports:
+      - 127.0.0.1:8000:8000
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  tunnel:
+    image: cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    profiles: [tunnel]
+    command: [tunnel, --no-autoupdate, --url, "http://web:8000"]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    logging: *logging
+
+  test-db:
+    image: postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+    profiles: [test]
+    environment:
+      POSTGRES_DB: funnel_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test-admin
+      APP_DB_PASSWORD: test-app
+    volumes:
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/10-app.sh:ro
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d funnel_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  tests:
+    <<: *app
+    profiles: [test]
+    image: interview-ninja-funnel-tests:local
+    build:
+      context: .
+      target: test
+    command: [pytest, -q, -p, "no:cacheprovider"]
+    environment:
+      TEST_DATABASE_URL: postgresql://funnel:test-app@test-db:5432/funnel_test
+      TEST_ADMIN_URL: postgresql://postgres:test-admin@test-db:5432/funnel_test
+      LOG_DIRECTORY: /tmp/logs
+    volumes: []
+    depends_on:
+      test-db:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

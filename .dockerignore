@@ -1,0 +1,10 @@
+*
+!pyproject.toml
+!requirements.lock
+!funnel.yaml
+!launch_funnel
+!launch_funnel/**
+!tests
+!tests/**
+**/__pycache__
+**/*.pyc

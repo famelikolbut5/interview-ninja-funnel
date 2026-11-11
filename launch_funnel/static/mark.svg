@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1254 1254">
+  <defs>
+    <clipPath id="head-clip">
+      <circle cx="627" cy="627" r="617"/>
+    </clipPath>
+
+    <linearGradient id="outer" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#282828"/>
+      <stop offset="1" stop-color="#1A1A1A"/>
+    </linearGradient>
+
+    <linearGradient id="hood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#202020"/>
+      <stop offset="1" stop-color="#1A1A1A"/>
+    </linearGradient>
+
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FED45E"/>
+      <stop offset="1" stop-color="#F8C94A"/>
+    </linearGradient>
+
+    <linearGradient id="eye" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#282828"/>
+      <stop offset="1" stop-color="#1A1A1A"/>
+    </linearGradient>
+    <path id="left-eye" d="
+      M 301 615
+      C 317 598, 349 596, 382 603
+      C 426 612, 468 637, 489 670
+      C 501 689, 504 707, 496 718
+      C 487 731, 461 736, 432 733
+      C 388 729, 344 705, 320 670
+      C 306 650, 298 628, 301 615
+      Z"/>
+    <path id="left-fold" d="M 32 688 L 125 589 L 169 756 Z"/>
+  </defs>
+
+  <g clip-path="url(#head-clip)">
+    <circle cx="627" cy="627" r="617" fill="url(#outer)"/>
+    <path d="
+      M 32 688
+      C 68 505, 213 380, 400 340
+      C 473 324, 550 329, 627 329
+      C 704 329, 781 324, 854 340
+      C 1041 380, 1186 505, 1222 688
+      L 1129 589
+      C 1019 515, 839 478, 627 478
+      C 415 478, 235 515, 125 589
+      Z" fill="url(#hood)"/>
+    <path d="
+      M 125 589
+      C 235 516, 415 478, 627 478
+      C 839 478, 1019 516, 1129 589
+      C 1129 642, 1116 704, 1085 756
+      C 950 814, 794 844, 627 844
+      C 460 844, 304 814, 169 756
+      C 138 704, 125 642, 125 589
+      Z" fill="url(#skin)"/>
+    <use href="#left-fold" fill="#1A1A1A"/>
+    <use href="#left-fold" fill="#1A1A1A" transform="translate(1254 0) scale(-1 1)"/>
+    <path d="
+      M 32 688
+      L 169 756
+      C 304 814, 460 844, 627 844
+      C 794 844, 950 814, 1085 756
+      L 1222 688
+      C 1244 907, 1142 1098, 972 1198
+      C 871 1257, 752 1270, 627 1270
+      C 502 1270, 383 1257, 282 1198
+      C 112 1098, 10 907, 32 688
+      Z" fill="url(#hood)"/>
+    <use href="#left-eye" fill="url(#eye)"/>
+    <use href="#left-eye" fill="url(#eye)" transform="translate(1254 0) scale(-1 1)"/>
+  </g>
+</svg>
