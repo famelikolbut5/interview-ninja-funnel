@@ -46,6 +46,6 @@ class Photo:
                 temporary.write_text(json.dumps({"sha256": self.digest, "file_id": self.file_id}), encoding="utf-8")
                 temporary.replace(self.cache)
             except OSError:
-                logger.bind(event="media_cache_failed", action="Проверьте права записи в каталог data").warning(
-                    "Изображение отправлено. Сохранить кэш файла не удалось"
+                logger.bind(event="media_cache_failed", action="check_cache_permissions").warning(
+                    "Photo sent; cache write failed"
                 )

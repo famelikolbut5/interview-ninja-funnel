@@ -41,10 +41,10 @@ def main() -> None:
         apply_migrations(read_database_url())
     except (ConfigError, psycopg.Error) as error:
         logger.bind(event="migration_failed", **error_details(error)).error(
-            "Миграция не применена. Проверьте PostgreSQL и файлы миграций, затем повторите запуск"
+            "Database migration failed"
         )
         raise SystemExit(1) from None
-    logger.bind(event="migration_complete").info("Схема PostgreSQL обновлена")
+    logger.bind(event="migration_complete").info("Database schema ready")
 
 
 if __name__ == "__main__":

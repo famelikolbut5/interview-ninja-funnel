@@ -62,22 +62,23 @@ class Delivery:
             log = log.bind(reason=reason, error_type=type(error).__name__)
             if retry_in is not None:
                 await asyncio.to_thread(self.storage.retry, job.id, time() + retry_in)
-                log.bind(retry_in_seconds=retry_in).warning("Telegram временно недоступен для отправки. Повтор запланирован")
+                log.bind(retry_in_seconds=retry_in).warning("Delivery retry scheduled")
             else:
                 await asyncio.to_thread(self.storage.mark_failed, job.id, time())
-                hint = (
-                    "Проверьте доступ к Telegram API и лимиты, затем воспроизведите на тестовом аккаунте"
-                    if reason == "telegram_unavailable"
-                    else "Проверьте, открыт ли чат с ботом, и текст шага в funnel.yaml"
-                )
-                log.bind(action=hint).error("Отправка завершилась ошибкой")
+                action = {
+                    "telegram_unavailable": "check_telegram_connection",
+                    "rate_limit": "check_telegram_rate_limit",
+                    "chat_forbidden": "check_chat_access",
+                    "telegram_rejected_request": "check_funnel_message",
+                }[reason]
+                log.bind(action=action).error("Delivery failed")
         else:
             sent_at = time()
             try:
                 await asyncio.to_thread(self.storage.mark_sent, job.id, sent_at)
             except psycopg.Error as error:
                 log.bind(**error_details(error)).error(
-                    "Telegram принял сообщение, PostgreSQL не записал результат. Проверьте состояние задания до повторной отправки"
+                    "Delivery accepted but status update failed"
                 )
                 raise
-            log.bind(late_by_seconds=round(max(0, sent_at - job.due_at), 2)).info("Telegram принял сообщение")
+            log.bind(late_by_seconds=round(max(0, sent_at - job.due_at), 2)).info("Delivery accepted")

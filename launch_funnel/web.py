@@ -53,13 +53,13 @@ def authorize(settings: Settings, init_data: str, now: datetime, request_id: str
             raise ValueError("Duplicate initData fields")
         data = safe_parse_webapp_init_data(settings.bot_token, init_data)
     except (TypeError, ValueError):
-        log.bind(reason="invalid_signature_or_payload").warning("Откройте Mini App из чата бота")
+        log.bind(reason="invalid_signature_or_payload").warning("Dashboard authorization rejected")
         raise HTTPException(401, "Откройте статистику из чата бота") from None
     if not now - timedelta(hours=1) <= data.auth_date <= now + timedelta(seconds=30):
-        log.bind(reason="expired_or_future_auth_date").warning("Переоткройте Mini App в Telegram")
+        log.bind(reason="expired_or_future_auth_date").warning("Dashboard authorization rejected")
         raise HTTPException(401, "Переоткройте статистику из чата бота")
     if data.user is None or data.user.id != settings.admin_user_id:
-        log.bind(reason="not_owner").warning("Доступ к статистике разрешён владельцу бота")
+        log.bind(reason="not_owner").warning("Dashboard authorization rejected")
         raise HTTPException(403, "Статистика доступна владельцу бота")
 
 
@@ -73,10 +73,10 @@ def create_app(settings: Settings) -> FastAPI:
             storage.check_ready()
         except (OSError, psycopg.Error) as error:
             logger.bind(event="dashboard_startup_failed", **error_details(error)).error(
-                "Не удалось открыть PostgreSQL. Проверьте базу и выполненные миграции"
+                "Database readiness check failed"
             )
             raise
-        logger.bind(event="dashboard_started", url="http://127.0.0.1:8000").info("Mini App готов к запуску в Telegram")
+        logger.bind(event="dashboard_started", url="http://127.0.0.1:8000").info("Web server started")
         yield
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -119,12 +119,12 @@ def create_app(settings: Settings) -> FastAPI:
             totals = storage.stats()
         except psycopg.Error as error:
             logger.bind(event="dashboard_stats_failed", request_id=request_id, **error_details(error)).error(
-                "Не удалось прочитать статистику. Проверьте доступ к PostgreSQL и блокировки транзакций"
+                "Dashboard stats query failed"
             )
             raise HTTPException(503, "Статистика временно недоступна", headers={"X-Request-ID": request_id}) from None
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Request-ID"] = request_id
-        logger.bind(event="dashboard_stats_served", request_id=request_id).info("Статистика обновлена")
+        logger.bind(event="dashboard_stats_served", request_id=request_id).info("Dashboard stats served")
         return DashboardStats(
             started=totals.started,
             registered=totals.registered,
@@ -146,7 +146,7 @@ def main() -> None:
     try:
         app = create_app(read_settings())
     except ConfigError as error:
-        logger.bind(event="invalid_config").error(str(error))
+        logger.bind(event="invalid_config", reason=str(error)).error("Invalid configuration")
         raise SystemExit(2) from None
     uvicorn.run(app, host=os.getenv("WEB_HOST", "127.0.0.1"), port=8000, log_config=None, access_log=False,
                 proxy_headers=False, limit_concurrency=32, timeout_keep_alive=5,

@@ -49,10 +49,10 @@ def main() -> None:
         participants, jobs = import_sqlite(source, Storage(read_database_url()))
     except (ConfigError, sqlite3.Error, psycopg.Error) as error:
         logger.bind(event="import_failed", **error_details(error)).error(
-            "Перенос отменён. Проверьте исходный файл, PostgreSQL и пустую целевую базу"
+            "SQLite import failed"
         )
         raise SystemExit(1) from None
-    logger.bind(event="import_complete", participants=participants, jobs=jobs).info("Данные перенесены")
+    logger.bind(event="import_complete", participants=participants, jobs=jobs).info("SQLite import completed")
 
 
 if __name__ == "__main__":

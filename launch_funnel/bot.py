@@ -63,15 +63,15 @@ class PollingLog(BaseRequestMiddleware):
             kind = type(error).__name__
             if kind != self.last_error:
                 action = (
-                    "Остановите второй процесс бота с этим токеном"
+                    "stop_duplicate_poller"
                     if isinstance(error, TelegramConflictError)
-                    else "Проверьте доступ к api.telegram.org и статус токена"
+                    else "check_telegram_connection"
                 )
-                logger.bind(event="polling_failed", error_type=kind, action=action).warning("Не удалось получить события")
+                logger.bind(event="polling_failed", error_type=kind, action=action).warning("Polling failed")
                 self.last_error = kind
             raise
         if self.last_error is not None:
-            logger.bind(event="polling_restored").info("Приём событий восстановился")
+            logger.bind(event="polling_restored").info("Polling recovered")
             self.last_error = None
         return result
 
@@ -97,13 +97,13 @@ def build_router(funnel: Funnel, storage: Storage, admin_id: int, mini_app_url: 
         source_key = command.args if command.args and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", command.args) else None
         attribution = funnel.sources.get(source_key) if source_key else None
         registered = await asyncio.to_thread(storage.start, message.from_user.id, time(), source_key, attribution)
-        logger.bind(event="bot_start", message_id=message.message_id, already_registered=registered).info("Команда start обработана")
         if registered:
             await message.answer(funnel.already_registered, reply_markup=ReplyKeyboardRemove())
         else:
             await cover.send(message, funnel.greeting, contact_keyboard)
-        logger.bind(event="greeting_sent", duration_ms=round((monotonic() - started_at) * 1000)).info(
-            "Приветствие отправлено"
+        logger.bind(event="bot_start", message_id=message.message_id, already_registered=registered,
+                    duration_ms=round((monotonic() - started_at) * 1000)).info(
+            "Start command handled"
         )
 
     @router.message(Command("stats"), F.from_user.id == admin_id)
@@ -129,7 +129,7 @@ def build_router(funnel: Funnel, storage: Storage, admin_id: int, mini_app_url: 
             await message.answer(funnel.start_first)
             return
         if result is Registration.NEW:
-            logger.bind(event="registered", message_id=message.message_id, scheduled=2).info("Регистрация сохранена")
+            logger.bind(event="registered", message_id=message.message_id, scheduled=2).info("Registration created")
         text = funnel.registered if result is Registration.NEW else funnel.already_registered
         await message.answer(text, reply_markup=ReplyKeyboardRemove())
 
@@ -140,7 +140,7 @@ def build_router(funnel: Funnel, storage: Storage, admin_id: int, mini_app_url: 
     @router.error()
     async def handle_error(event: ErrorEvent) -> bool:
         logger.bind(event="update_error", update_id=event.update.update_id, **error_details(event.exception)).error(
-            "Не удалось обработать событие. Проверьте указанную строку и доступность PostgreSQL и Telegram API"
+            "Update handler failed"
         )
         if event.update.message is not None:
             with suppress(TelegramAPIError):
@@ -189,14 +189,14 @@ async def run() -> None:
             )
         except TelegramAPIError as error:
             logger.bind(event="dashboard_menu_failed", error_type=type(error).__name__).warning(
-                "Не удалось настроить меню владельца. Откройте чат бота, проверьте ADMIN_USER_ID и попробуйте /stats"
+                "Dashboard menu update failed"
             )
         else:
-            logger.bind(event="dashboard_menu_ready").info("Кнопка статистики добавлена в меню чата владельца")
+            logger.bind(event="dashboard_menu_ready").debug("Dashboard menu configured")
 
         delivery = Delivery(storage, build_sender(bot, funnel, settings.cache_directory))
         logger.bind(event="bot_started", bot=me.username, delays=[step.delay_seconds for step in funnel.messages]).info(
-            "Бот запущен. Откройте его в Telegram и нажмите /start"
+            "Bot started"
         )
         async with asyncio.TaskGroup() as group:
             worker = group.create_task(delivery.run())
@@ -217,23 +217,23 @@ def main() -> None:
         with storage.bot_lock(int(settings.bot_token.partition(":")[0])):
             asyncio.run(run())
     except KeyboardInterrupt:
-        logger.bind(event="bot_stopped").info("Бот остановлен из терминала")
+        logger.bind(event="bot_stopped").info("Bot stopped")
     except ConfigError as error:
-        logger.bind(event="invalid_config").error(str(error))
+        logger.bind(event="invalid_config", reason=str(error)).error("Invalid configuration")
         raise SystemExit(2) from None
     except TelegramUnauthorizedError:
-        logger.bind(event="invalid_bot_token", action="Проверьте BOT_TOKEN и перезапустите контейнер бота").error(
-            "Telegram отклонил токен бота"
+        logger.bind(event="invalid_bot_token", action="check_bot_token").error(
+            "Bot authentication failed"
         )
         raise SystemExit(2) from None
     except BotAlreadyRunning:
-        logger.bind(event="bot_already_running", action="Остановите другой процесс бота для этой базы").error(
-            "Другой процесс уже запустил этого бота"
+        logger.bind(event="bot_already_running", action="stop_duplicate_poller").error(
+            "Bot instance already running"
         )
         raise SystemExit(2) from None
     except Exception as error:
         logger.bind(event="bot_stopped", **error_details(error)).error(
-            "Бот остановился. Проверьте токен, соединение с Telegram и доступ к PostgreSQL"
+            "Bot process failed"
         )
         raise SystemExit(1) from None
 

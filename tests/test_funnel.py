@@ -22,11 +22,13 @@ from aiogram.types import (
     ReplyKeyboardRemove,
     Update,
 )
+from loguru import logger
 
 from launch_funnel import bot as bot_module
 from launch_funnel import delivery
 from launch_funnel.bot import build_router
 from launch_funnel.config import ConfigError, Settings, read_funnel
+from launch_funnel.media import Photo
 from launch_funnel.storage import Job, Registration, Stats, Storage
 
 FUNNEL_PATH = Path(__file__).resolve().parents[1] / "funnel.yaml"
@@ -129,7 +131,13 @@ class RecordingSession(BaseSession):
         yield b""
 
 
-def test_dispatcher_wires_real_commands_and_contact(storage: Storage, tmp_path: Path) -> None:
+def test_dispatcher_wires_real_commands_and_contact(
+    storage: Storage, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    starts: list[dict[str, object]] = []
+    sink = logger.add(lambda message: starts.append(dict(message.record["extra"])),
+                      filter=lambda record: record["extra"].get("event") == "bot_start")
+
     async def run() -> None:
         session = RecordingSession()
         dispatcher = Dispatcher()
@@ -188,7 +196,21 @@ def test_dispatcher_wires_real_commands_and_contact(storage: Storage, tmp_path: 
                 with storage.connection() as db:
                     assert db.execute("SELECT source_key, utm_source FROM participants WHERE user_id = %s", (user_id,)).fetchone() == (expected, None)
 
-    asyncio.run(run())
+            async def unavailable_photo(_photo: Photo, message: Message, caption: str,
+                                        keyboard: ReplyKeyboardMarkup) -> None:
+                raise TelegramNetworkError(SendPhoto(chat_id=message.chat.id, photo="cached-photo"), "network")
+
+            monkeypatch.setattr(Photo, "send", unavailable_photo)
+            await feed(12, user_id=12, text="/start")
+            assert isinstance(session.calls[-1], SendMessage)
+            assert session.calls[-1].text == FUNNEL.temporary_error
+
+    try:
+        asyncio.run(run())
+    finally:
+        logger.remove(sink)
+    assert [record["already_registered"] for record in starts] == [False, True, False, False, False]
+    assert all("duration_ms" in record and "message_id" in record for record in starts)
 
 
 def test_attribution_and_phone_survive_restart_and_repeated_contact(storage: Storage) -> None:
